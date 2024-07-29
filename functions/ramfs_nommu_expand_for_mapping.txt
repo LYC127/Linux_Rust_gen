@@ -1,0 +1,130 @@
+//Called Function
+int get_order(unsigned long size)
+{
+	if (__builtin_constant_p(size)) {
+		if (!size)
+			return BITS_PER_LONG - PAGE_SHIFT;
+
+		if (size < (1UL << PAGE_SHIFT))
+			return 0;
+
+		return ilog2((size) - 1) - PAGE_SHIFT + 1;
+	}
+
+	size--;
+	size >>= PAGE_SHIFT;
+#if BITS_PER_LONG == 32
+	return fls(size);
+#else
+	return fls64(size);
+#endif
+}//Called Function
+static inline void *skb_pull_inline(struct sk_buff *skb, unsigned int len)
+{
+	return unlikely(len > skb->len) ? NULL : __skb_pull(skb, len);
+}//Called Function
+#define memset(p, c, s) __fortify_memset_chk(p, c, s,			\
+		__struct_size(p), __member_size(p))
+//Called Function
+static inline void *skb_frag_address_safe(const skb_frag_t *frag)
+{
+	void *ptr = page_address(skb_frag_page(frag));
+	if (unlikely(!ptr))
+		return NULL;
+
+	return ptr + skb_frag_off(frag);
+}//Called Function
+static inline void i_size_write(struct inode *inode, loff_t i_size)
+{
+#if BITS_PER_LONG==32 && defined(CONFIG_SMP)
+	preempt_disable();
+	write_seqcount_begin(&inode->i_size_seqcount);
+	inode->i_size = i_size;
+	write_seqcount_end(&inode->i_size_seqcount);
+	preempt_enable();
+#elif BITS_PER_LONG==32 && defined(CONFIG_PREEMPTION)
+	preempt_disable();
+	inode->i_size = i_size;
+	preempt_enable();
+#else
+	/*
+	 * Pairs with smp_load_acquire() in i_size_read() to ensure
+	 * changes related to inode size (such as page contents) are
+	 * visible before we see the changed inode size.
+	 */
+	smp_store_release(&inode->i_size, i_size);
+#endif
+}//External Variable
+typedef struct scatterlist *(sg_alloc_fn)(unsigned int, gfp_t);
+//External Variable
+#define PAGE_SHIFT		CONFIG_PAGE_SHIFT
+
+//External Variable
+#define PAGE_SIZE		(_AC(1,UL) << PAGE_SHIFT)
+
+//the code to be converted
+int ramfs_nommu_expand_for_mapping(struct inode *inode, size_t newsize)
+{
+	unsigned long npages, xpages, loop;
+	struct page *pages;
+	unsigned order;
+	void *data;
+	int ret;
+	gfp_t gfp = mapping_gfp_mask(inode->i_mapping);
+
+	/* make various checks */
+	order = get_order(newsize);
+	if (unlikely(order >= MAX_ORDER))
+		return -EFBIG;
+
+	ret = inode_newsize_ok(inode, newsize);
+	if (ret)
+		return ret;
+
+	i_size_write(inode, newsize);
+
+	/* allocate enough contiguous pages to be able to satisfy the
+	 * request */
+	pages = alloc_pages(gfp, order);
+	if (!pages)
+		return -ENOMEM;
+
+	/* split the high-order page into an array of single pages */
+	xpages = 1UL << order;
+	npages = (newsize + PAGE_SIZE - 1) >> PAGE_SHIFT;
+
+	split_page(pages, order);
+
+	/* trim off any pages we don't actually require */
+	for (loop = npages; loop < xpages; loop++)
+		__free_page(pages + loop);
+
+	/* clear the memory we allocated */
+	newsize = PAGE_SIZE * npages;
+	data = page_address(pages);
+	memset(data, 0, newsize);
+
+	/* attach all the pages to the inode's address space */
+	for (loop = 0; loop < npages; loop++) {
+		struct page *page = pages + loop;
+
+		ret = add_to_page_cache_lru(page, inode->i_mapping, loop,
+					gfp);
+		if (ret < 0)
+			goto add_error;
+
+		/* prevent the page from being discarded on memory pressure */
+		SetPageDirty(page);
+		SetPageUptodate(page);
+
+		unlock_page(page);
+		put_page(page);
+	}
+
+	return 0;
+
+add_error:
+	while (loop < npages)
+		__free_page(pages + loop++);
+	return ret;
+}

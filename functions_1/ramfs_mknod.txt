@@ -1,0 +1,13 @@
+fn ramfs_mknod(dir: &mut Inode, dentry: &mut Dentry, mode: umode_t, dev: dev_t) -> i32 {
+    let mut inode = ramfs_get_inode(dir.i_sb, dir, mode, dev);
+    let mut error = -ENOSPC;
+
+    if let Some(inode_ref) = inode {
+        d_instantiate(dentry, inode_ref);
+        dget(dentry);
+        error = 0;
+        dir.i_mtime = current_time(dir);
+        dir.i_ctime = dir.i_mtime;
+    }
+    error
+}

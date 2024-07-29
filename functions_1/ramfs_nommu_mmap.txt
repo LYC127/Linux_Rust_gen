@@ -1,0 +1,9 @@
+fn ramfs_nommu_mmap(file: &mut File, vma: &mut VmAreaStruct) -> i32 {
+    if (vma.vm_flags & (VM_SHARED | VM_MAYSHARE)) == 0 {
+        return -ENOSYS;
+    }
+
+    file_accessed(file);
+    vma.vm_ops = &GENERIC_FILE_VM_OPS;
+    0
+}

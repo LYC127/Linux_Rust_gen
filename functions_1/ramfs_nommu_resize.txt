@@ -1,0 +1,21 @@
+fn ramfs_nommu_resize(inode: &mut Inode, newsize: loff_t, size: loff_t) -> i32 {
+    let mut ret: i32;
+
+    if size == 0 {
+        if unlikely((newsize >> 32) != 0) {
+            return -EFBIG;
+        }
+
+        return ramfs_nommu_expand_for_mapping(inode, newsize as usize);
+    }
+
+    if newsize < size {
+        ret = nommu_shrink_inode_mappings(inode, size, newsize);
+        if ret < 0 {
+            return ret;
+        }
+    }
+
+    truncate_setsize(inode, newsize);
+    0
+}

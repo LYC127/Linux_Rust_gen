@@ -1,0 +1,8 @@
+//Called Function
+static int
+ramfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev)
+//the code to be converted
+static int ramfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool excl)
+{
+	return ramfs_mknod(dir, dentry, mode | S_IFREG, 0);
+}

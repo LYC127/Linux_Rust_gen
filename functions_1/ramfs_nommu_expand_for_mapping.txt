@@ -1,0 +1,65 @@
+fn ramfs_nommu_expand_for_mapping(inode: &mut Inode, newsize: usize) -> i32 {
+    let mut npages;
+    let xpages;
+    let mut loop_var;
+    let pages;
+    let order;
+    let data;
+    let mut ret;
+    let gfp = mapping_gfp_mask(inode.i_mapping);
+
+    // make various checks
+    order = get_order(newsize as u64);
+    if unlikely(order >= MAX_ORDER) {
+        return -EFBIG;
+    }
+
+    ret = inode_newsize_ok(inode, newsize);
+    if ret != 0 {
+        return ret;
+    }
+
+    i_size_write(inode, newsize as loff_t);
+
+    // allocate enough contiguous pages to be able to satisfy the request
+    pages = alloc_pages(gfp, order);
+    if pages.is_null() {
+        return -ENOMEM;
+    }
+
+    // split the high-order page into an array of single pages
+    xpages = 1u64 << order;
+    npages = (newsize + PAGE_SIZE - 1) >> PAGE_SHIFT;
+
+    split_page(pages, order);
+
+    // trim off any pages we don't actually require
+    for loop_var in npages..xpages {
+        __free_page(unsafe { &mut *pages.add(loop_var as usize) });
+    }
+
+    // clear the memory we allocated
+    let newsize = PAGE_SIZE * npages;
+    data = page_address(pages);
+    unsafe { core::ptr::write_bytes(data, 0, newsize) };
+
+    // attach all the pages to the inode's address space
+    for loop_var in 0..npages {
+        let page = unsafe { &mut *pages.add(loop_var as usize) };
+
+        ret = add_to_page_cache_lru(page, inode.i_mapping, loop_var as pgoff_t, gfp);
+        if ret < 0 {
+            goto_add_error(npages - loop_var, pages);
+            return ret;
+        }
+
+        // prevent the page from being discarded on memory pressure
+        SetPageDirty(page);
+        SetPageUptodate(page);
+
+        unlock_page(page);
+        put_page(page);
+    }
+
+    0
+}

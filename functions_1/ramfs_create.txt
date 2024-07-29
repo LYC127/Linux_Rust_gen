@@ -1,0 +1,3 @@
+fn ramfs_create(dir: &mut Inode, dentry: &mut Dentry, mode: umode_t, excl: bool) -> i32 {
+    ramfs_mknod(dir, dentry, mode | S_IFREG, 0)
+}

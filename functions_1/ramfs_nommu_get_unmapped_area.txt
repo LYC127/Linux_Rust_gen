@@ -1,0 +1,47 @@
+fn ramfs_nommu_get_unmapped_area(file: &File, addr: usize, len: usize, pgoff: usize, flags: usize) -> usize {
+    let inode = file_inode(file);
+    let mut pages: Option<&mut [*mut Page]> = None;
+    let isize = i_size_read(inode);
+
+    let lpages = (len + PAGE_SIZE - 1) >> PAGE_SHIFT;
+    let maxpages = (isize + PAGE_SIZE - 1) >> PAGE_SHIFT;
+    if pgoff >= maxpages {
+        return -ENOSYS as usize;
+    }
+
+    if maxpages - pgoff < lpages {
+        return -ENOSYS as usize;
+    }
+
+    pages = kcalloc(lpages, core::mem::size_of::<*mut Page>(), GFP_KERNEL);
+    if pages.is_none() {
+        return -ENOSYS as usize;
+    }
+
+    let mut nr = find_get_pages(inode.i_mapping, &mut pgoff, lpages, pages.unwrap());
+    if nr != lpages {
+        goto_out_free_pages(&mut pages, nr);
+        return -ENOSYS as usize;
+    }
+
+    let mut ptr = pages.unwrap();
+    let mut page = unsafe { *ptr.as_mut_ptr() };
+    ptr = &mut ptr[1..];
+    page = unsafe { page.add(1) };
+    for _ in 1..lpages {
+        if unsafe { *ptr.as_mut_ptr() } != page {
+            goto_out_free_pages(&mut pages, nr);
+            return -ENOSYS as usize;
+   	    }
+        ptr = &mut ptr[1..];
+        page = unsafe { page.add(1) };
+    }
+
+    let ret = page_address(pages.unwrap()[0]) as usize;
+
+    for &page in pages.unwrap() {
+        put_page(page);
+    }
+    kfree(pages.unwrap());
+    return ret as usize;
+}

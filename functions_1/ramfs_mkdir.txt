@@ -1,0 +1,7 @@
+fn ramfs_mkdir(dir: &mut Inode, dentry: &mut Dentry, mode: umode_t) -> i32 {
+    let retval = ramfs_mknod(dir, dentry, mode | S_IFDIR, 0);
+    if retval == 0 {
+        inc_nlink(dir);
+    }
+    retval
+}
